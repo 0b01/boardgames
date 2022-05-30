@@ -1,11 +1,15 @@
-use rand::{prelude::SliceRandom, thread_rng};
+use rand::SeedableRng;
+use rand::{prelude::SliceRandom};
 
 use crate::Config;
+use crate::strategy::from_usize;
+use rand_chacha::ChaCha8Rng;
+
 
 #[derive(Clone, Copy, Debug)]
 pub struct Card {
-    suit: u8, 
-    rank: u8,
+    pub suit: u8, 
+    pub rank: u8,
 }
 
 #[derive(Debug)]
@@ -15,7 +19,7 @@ pub struct Deck {
 }
 
 impl Deck {
-    pub fn new(cfg: &Config) -> Self {
+    pub fn new(cfg: &Config, seed: usize) -> Self {
         let mut cards = vec![];
         for suit in 0..cfg.suits {
             for rank in 0..cfg.ranks {
@@ -23,7 +27,7 @@ impl Deck {
             }
         }
 
-        let mut rng = thread_rng();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed as u64);
         cards.shuffle(&mut rng);
 
         Self {
@@ -45,16 +49,16 @@ impl Deck {
 
 #[derive(Debug)]
 pub struct Parade {
-    deck: Deck,
-    parade: Vec<Card>,
-    hands: Vec<Vec<Card>>,
-    boards: Vec<Vec<Card>>,
-    cfg: Config,
+    pub deck: Deck,
+    pub parade: Vec<Card>,
+    pub hands: Vec<Vec<Card>>,
+    pub boards: Vec<Vec<Card>>,
+    pub cfg: Config,
 }
 
 impl Parade {
-    pub fn new(cfg: &Config) -> Self {
-        let mut deck = Deck::new(cfg);
+    pub fn new(cfg: &Config, seed: usize) -> Self {
+        let mut deck = Deck::new(cfg, seed);
         let parade = deck.draw(6).unwrap();
         let hands = (0..cfg.players).map(|_|deck.draw(5).unwrap()).collect();
         let boards = vec![vec![]; cfg.players];
@@ -67,7 +71,7 @@ impl Parade {
         }
     }
 
-    fn add_to_end(&self, card: Card) -> Vec<Card> {
+    pub fn add_to_end(&self, card: Card) -> Vec<Card> {
         self.parade
             .iter()
             .skip(card.rank as usize)
@@ -76,21 +80,42 @@ impl Parade {
             .collect()
     }
 
-    fn commit(&mut self, player: usize, card_to_play: usize) -> Option<()> {
+    pub fn commit(&mut self, player: usize, card_to_play: usize) -> Option<()> {
         let card = self.hands[player][card_to_play];
 
-        self.parade = self.parade
-            .iter()
-            .skip(card.rank as usize)
-            .take_while(|c| c.suit != card.suit && c.rank >= card.rank)
-            .copied()
-            .collect();
+        // dbg!(card);
+        // dbg!("before", &self.parade);
+        let mut new_parade = vec![];
+        let mut ejected = vec![];
+        for (i, c) in self.parade.iter().enumerate() {
+            if i < card.rank as usize {
+                new_parade.push(*c);
+            } else if card.suit == c.suit || c.rank < card.rank {
+                ejected.push(*c);
+            }
+            else {
+                new_parade.push(*c);
+            }
+        }
+
+        new_parade.push(card);
+        self.parade = new_parade;
+
+        // dbg!("after", &self.parade, &ejected);
 
         self.hands[player].remove(card_to_play);
         self.hands[player].extend(self.deck.draw(1)?);
-        self.boards[player].push(card);
+        self.boards[player].extend(ejected);
 
         Some(())
+    }
+
+    fn commit_end_game(&mut self) {
+        for player in 0..self.cfg.players {
+            self.boards[player].extend(&self.hands[player]);
+        }
+
+        self.hands.clear();
     }
 
     pub fn final_score(&self) -> Vec<usize> {
@@ -124,62 +149,33 @@ impl Parade {
     }
 }
 
-trait Strategy {
-    fn play(&self, game: &Parade, player: usize) -> usize;
+#[derive(Default, Debug, Clone)]
+pub struct Stats {
+    pub forced_taking: u32,
 }
 
-struct TakeMin;
-impl Strategy for TakeMin {
-    fn play(&self, parade: &Parade, player: usize) -> usize {
-        let hand = &parade.hands[player];
-        hand
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, c)| parade.add_to_end(**c).iter().map(|c| c.rank as usize).sum::<usize>())
-            .map(|(idx, _)| idx)
-            .unwrap()
-    }
-}
+pub fn simulate(cfg: &Config, seed: usize) -> (Parade, Vec<Stats>) {
+    let mut parade = Parade::new(cfg, seed);
+    let mut stats: Vec<Stats> = vec![Default::default(); cfg.players];
+    let strats = match cfg.strats.len() {
+        0 => (0..cfg.players).map(|_|from_usize(&0)).collect(),
+        1 => (0..cfg.players).map(|_|from_usize(&cfg.strats[0])).collect(),
+        _ => cfg.strats.iter().map(from_usize).collect::<Vec<_>>(),
+    };
 
-struct FirstCard;
-impl Strategy for FirstCard {
-    fn play(&self, _parade: &Parade, _player: usize) -> usize {
-        0
-    }
-}
-
-struct TakeSmallCardsVoluntarily;
-impl Strategy for TakeSmallCardsVoluntarily {
-    fn play(&self, parade: &Parade, player: usize) -> usize {
-        let hand = &parade.hands[player];
-        hand
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, c)|
-                parade.add_to_end(**c)
-                .iter()
-                .map(|c| {
-                    let r = c.rank as i32;
-                    if r < 3 { -r } else { r }
-                }).sum::<i32>()
-            )
-            .map(|(idx, _)| idx)
-            .unwrap()
-    }
-}
-
-
-pub fn simulate(cfg: &Config) -> Parade {
-    let mut parade = Parade::new(cfg);
-    let take_min = TakeMin;
-    while parade.deck.remaining > 0 {
+    'outer: while parade.deck.remaining > 0 {
         for player in 0..cfg.players {
-            let card_to_play = take_min.play(&parade, player);
+            if !strats[player].can_avoid_card(&parade, player) {
+                stats[player].forced_taking += 1;
+            }
+
+            let card_to_play = strats[player].play(&parade, player);
             if parade.commit(player, card_to_play).is_none() {
-                return parade;
+                parade.commit_end_game();
+                break 'outer
             }
         }
     }
 
-    parade
+    (parade, stats)
 }

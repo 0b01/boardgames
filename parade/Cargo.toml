@@ -7,5 +7,6 @@ edition = "2021"
 
 [dependencies]
 rand = "0.8.5"
+rand_chacha = "*"
 rayon = "1.5.3"
 clap = { version = "3.1.18", features = ["derive"] }

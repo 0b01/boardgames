@@ -1,5 +1,7 @@
-use parade::{simulate};
 mod parade;
+mod strategy;
+
+use parade::{simulate};
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufWriter;
@@ -28,6 +30,8 @@ pub struct Config {
     /// number of iterations
     #[clap(short, long, default_value_t = 10000)]
     pub iters: usize,
+
+    pub strats: Vec<usize>,
 }
 
 fn main() {
@@ -35,18 +39,15 @@ fn main() {
 
     let mut wtr = BufWriter::with_capacity(1024, File::create(&cfg.output).unwrap());
 
-    let scores = (0..cfg.iters).into_par_iter().map(|_|{
-        let parade = simulate(&cfg);
-        parade.final_score()
+    let scores = (0..cfg.iters).into_par_iter().map(|i|{
+        let (parade, stats) = simulate(&cfg, i);
+        (parade.final_score(), stats)
     }).collect::<Vec<_>>();
 
-    // let mut row = vec![
-    //     cfg.suits.to_string(),
-    //     cfg.ranks.to_string(),
-    //     cfg.players.to_string(),
-    // ];
-    for score in scores {
+    for (score, stats) in scores {
         wtr.write_all(score.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(",").as_bytes()).unwrap();
+        wtr.write_all(",".as_bytes()).unwrap();
+        wtr.write_all(stats.iter().map(|s| s.forced_taking.to_string()).collect::<Vec<_>>().join(",").as_bytes()).unwrap();
         wtr.write_all("\n".as_bytes()).unwrap();
     }
 
