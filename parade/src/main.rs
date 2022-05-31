@@ -27,6 +27,14 @@ pub struct Config {
     #[clap(short, long, default_value = "output.csv")]
     pub output: String,
 
+    /// initial parade length
+    #[clap(long, default_value_t = 6)]
+    pub initial_parade: usize,
+
+    /// initial hand size
+    #[clap(long, default_value_t = 5)]
+    pub initial_hand_size: usize,
+
     /// number of iterations
     #[clap(short, long, default_value_t = 10000)]
     pub iters: usize,

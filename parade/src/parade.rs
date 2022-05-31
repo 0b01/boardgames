@@ -59,8 +59,12 @@ pub struct Parade {
 impl Parade {
     pub fn new(cfg: &Config, seed: usize) -> Self {
         let mut deck = Deck::new(cfg, seed);
-        let parade = deck.draw(6).unwrap();
-        let hands = (0..cfg.players).map(|_|deck.draw(5).unwrap()).collect();
+        if deck.remaining < cfg.initial_parade + cfg.players * cfg.initial_hand_size {
+            panic!("not enough cards in deck");
+        }
+
+        let parade = deck.draw(cfg.initial_parade).expect("Unable to setup parade");
+        let hands = (0..cfg.players).map(|_|deck.draw(cfg.initial_hand_size).expect("Unable to draw initial hand")).collect();
         let boards = vec![vec![]; cfg.players];
         Self {
             deck,
