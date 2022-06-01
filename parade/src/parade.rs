@@ -79,20 +79,21 @@ impl Parade {
     pub fn add_to_end(&self, card: Card) -> Vec<Card> {
         self.parade
             .iter()
+            .rev()
             .skip(card.rank as usize)
             .filter(|c| c.suit == card.suit || c.rank < card.rank)
             .copied()
             .collect()
     }
 
-    pub fn commit(&mut self, player: usize, card_to_play: usize) -> Option<()> {
+    pub fn commit(&mut self, player: usize, card_to_play: usize) -> Option<Vec<Card>> {
         let card = self.hands[player][card_to_play];
 
         // dbg!(card);
         // dbg!("before", &self.parade);
         let mut new_parade = vec![];
         let mut ejected = vec![];
-        for (i, c) in self.parade.iter().enumerate() {
+        for (i, c) in self.parade.iter().rev().enumerate() {
             if i < card.rank as usize {
                 new_parade.push(*c);
             } else if card.suit == c.suit || c.rank < card.rank {
@@ -103,6 +104,7 @@ impl Parade {
             }
         }
 
+        new_parade.reverse();
         new_parade.push(card);
         self.parade = new_parade;
 
@@ -110,9 +112,9 @@ impl Parade {
 
         self.hands[player].remove(card_to_play);
         self.hands[player].extend(self.deck.draw(1)?);
-        self.boards[player].extend(ejected);
+        self.boards[player].extend(ejected.clone());
 
-        Some(())
+        Some(ejected)
     }
 
     fn commit_end_game(&mut self) {
@@ -183,4 +185,34 @@ pub fn simulate(cfg: &Config, seed: usize) -> (Parade, Vec<Stats>) {
     }
 
     (parade, stats)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parade() {
+        let cfg = Config {
+            suits: 6,
+            ranks: 11,
+            players: 2,
+            initial_parade: 6,
+            initial_hand_size: 5,
+            strats: vec![],
+            output: "".to_owned(),
+            iters: 1,
+        };
+
+        let mut parade = Parade::new(&cfg, 0);
+        parade.parade = vec![
+            Card { suit: 0, rank: 0 },
+            Card { suit: 1, rank: 0 },
+            Card { suit: 2, rank: 0 },
+        ];
+        parade.hands[0][0] = Card { suit: 0, rank: 1 };
+        dbg!(&parade.parade);
+        parade.commit(0, 0);
+        dbg!(&parade.parade);
+    }
 }
