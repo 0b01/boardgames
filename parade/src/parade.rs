@@ -1,18 +1,19 @@
 use rand::SeedableRng;
 use rand::{prelude::SliceRandom};
+use serde::{Serialize, Deserialize};
 
 use crate::Config;
 use crate::strategy::from_usize;
 use rand_chacha::ChaCha8Rng;
 
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Card {
     pub suit: u8, 
     pub rank: u8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Deck {
     cards: Vec<Card>,
     remaining: usize,
@@ -47,7 +48,7 @@ impl Deck {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Parade {
     pub deck: Deck,
     pub parade: Vec<Card>,
